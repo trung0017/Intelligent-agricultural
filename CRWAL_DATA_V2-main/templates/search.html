@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+
+{% block title %}Tìm kiếm - WikiNongSan{% endblock %}
+
+{% block content %}
+<div class="search-header">
+    <h1>Tìm kiếm</h1>
+    
+    <form action="/search" method="get" class="search-form">
+        <div class="search-input-group">
+            <input type="text" name="q" value="{{ query }}" placeholder="Nhập từ khóa tìm kiếm..." 
+                   class="search-input-large" autofocus>
+            <button type="submit" class="btn btn-primary">Tìm kiếm</button>
+        </div>
+    </form>
+</div>
+
+{% if query %}
+<div class="search-results">
+    <h2>Kết quả tìm kiếm cho "{{ query }}"</h2>
+    
+    {% if results %}
+    <p class="results-count">Tìm thấy {{ results|length }} kết quả</p>
+    
+    <div class="results-list">
+        {% for result in results %}
+        <div class="result-item">
+            <h3><a href="/page/{{ result.slug }}">{{ result.title }}</a></h3>
+            <p class="result-snippet">{{ result.snippet }}</p>
+            <p class="result-url">
+                <a href="/page/{{ result.slug }}">/page/{{ result.slug }}</a>
+            </p>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="no-results">
+        <h3>Không tìm thấy kết quả</h3>
+        <p>Không có bài viết nào chứa từ khóa "{{ query }}"</p>
+        
+        <div class="search-suggestions">
+            <h4>Gợi ý:</h4>
+            <ul>
+                <li>Kiểm tra lại chính tả</li>
+                <li>Thử từ khóa khác</li>
+                <li>Sử dụng từ khóa ngắn gọn hơn</li>
+            </ul>
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% else %}
+<div class="search-help">
+    <h2>Tìm kiếm nâng cao</h2>
+    
+    <div class="search-tips">
+        <div class="tip-section">
+            <h3>Chủ đề phổ biến</h3>
+            <div class="topic-tags">
+                <a href="/search?q=lúa" class="topic-tag">Trồng lúa</a>
+                <a href="/search?q=rau" class="topic-tag">Trồng rau</a>
+                <a href="/search?q=chăn nuôi" class="topic-tag">Chăn nuôi</a>
+                <a href="/search?q=công nghệ" class="topic-tag">Công nghệ nông nghiệp</a>
+                <a href="/search?q=phân bón" class="topic-tag">Phân bón</a>
+                <a href="/search?q=thuốc trừ sâu" class="topic-tag">Thuốc trừ sâu</a>
+            </div>
+        </div>
+        
+        <div class="tip-section">
+            <h3>Mẹo tìm kiếm</h3>
+            <ul>
+                <li>Sử dụng từ khóa tiếng Việt có dấu</li>
+                <li>Tìm kiếm theo tên cây trồng, vật nuôi</li>
+                <li>Tìm theo kỹ thuật, phương pháp</li>
+                <li>Tìm theo vùng miền (miền Bắc, miền Nam...)</li>
+            </ul>
+        </div>
+        
+        <div class="tip-section">
+            <h3>Ví dụ tìm kiếm</h3>
+            <ul>
+                <li><a href="/search?q=kỹ thuật trồng lúa">kỹ thuật trồng lúa</a></li>
+                <li><a href="/search?q=chăn nuôi heo">chăn nuôi heo</a></li>
+                <li><a href="/search?q=phòng trừ sâu bệnh">phòng trừ sâu bệnh</a></li>
+                <li><a href="/search?q=nông nghiệp hữu cơ">nông nghiệp hữu cơ</a></li>
+            </ul>
+        </div>
+    </div>
+</div>
+{% endif %}
+{% endblock %}

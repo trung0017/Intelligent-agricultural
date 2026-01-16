@@ -1,0 +1,1102 @@
+{% extends "base.html" %}
+
+{% block title %}Crawler & AI - WikiNongSan{% endblock %}
+
+{% block content %}
+<div class="admin-header">
+    <h1>Crawler & AI Processing</h1>
+    <div class="admin-actions">
+        <a href="/admin/dashboard" class="btn btn-secondary">← Dashboard</a>
+    </div>
+</div>
+
+<!-- System Status -->
+<div class="system-status" id="systemStatus">
+    <h2>Trạng thái hệ thống</h2>
+    <div class="status-grid">
+        <div class="status-card" id="ollamaStatus">
+            <h4>🤖 AI (Ollama)</h4>
+            <p class="status-text">Đang kiểm tra...</p>
+        </div>
+    </div>
+</div>
+
+<!-- Multi-Source Crawler -->
+<div class="crawler-section">
+    <h2>🕷️ Multi-Source Crawler</h2>
+    <p>Thu thập nội dung từ nhiều trang web và tổng hợp thành 1 bài viết wiki</p>
+    
+    <form id="crawlerForm" class="crawler-form">
+        <div class="form-group">
+            <label for="topic">Chủ đề bài viết:</label>
+            <input type="text" id="topic" name="topic" required class="form-input" 
+                   placeholder="Ví dụ: Kỹ thuật trồng lúa hiện đại">
+        </div>
+        
+        <div class="form-group">
+            <label for="urls">URLs (1-5 URL, mỗi URL một dòng):</label>
+            <textarea id="urls" name="urls" required class="form-textarea" rows="8"
+                      placeholder="https://vnexpress.net/...
+https://dantri.com.vn/...
+https://nongnghiep.vn/..."></textarea>
+            <small>💡 Chọn các bài viết cùng chủ đề để có kết quả tốt nhất</small>
+        </div>
+        
+        <div class="form-actions">
+            <button type="submit" class="btn btn-primary" id="startCrawlerBtn">
+                 Bắt đầu thu thập
+            </button>
+            <button type="button" class="btn btn-secondary" onclick="clearForm()">
+                🗑️ Xóa form
+            </button>
+        </div>
+    </form>
+</div>
+
+<!-- Task Monitor -->
+<div class="task-monitor" id="taskMonitor" style="display: none;">
+    <h2>📊 Theo dõi tiến trình</h2>
+    
+    <div class="task-info">
+        <p><strong>Task ID:</strong> <span id="currentTaskId">-</span></p>
+        <p><strong>Trạng thái:</strong> <span id="currentTaskStatus" class="status-badge">-</span></p>
+    </div>
+    
+    <div class="task-logs">
+        <h3>📝 Logs</h3>
+        <div id="taskLogs" class="logs-container">
+            <p>Chưa có logs...</p>
+        </div>
+    </div>
+    
+    <div class="task-actions">
+        <button type="button" class="btn btn-secondary" onclick="hideTaskMonitor()">
+            ❌ Đóng
+        </button>
+        <button type="button" class="btn btn-primary" onclick="refreshLogs()">
+            🔄 Refresh
+        </button>
+    </div>
+</div>
+
+<!-- Text Cleaner -->
+<div class="cleaner-section">
+    <h2>🤖 Text Cleaner</h2>
+    <p>Làm sạch các file JSON thô trong thư mục raw_content với AI prompt tùy chỉnh</p>
+    
+    <form id="cleanerForm" class="cleaner-form">
+        <div class="form-group">
+            <label for="aiPrompt">🎯 AI Prompt (tùy chỉnh):</label>
+            <textarea id="aiPrompt" name="aiPrompt" class="form-textarea" rows="8" 
+                      placeholder="Nhập prompt tùy chỉnh cho AI...">Bạn là chuyên gia viết bài về nông nghiệp. Hãy tổng hợp và viết lại nội dung sau thành một bài viết wiki hoàn chỉnh.
+
+YÊU CẦU:
+1. Tạo một bài viết mạch lạc, có cấu trúc rõ ràng
+2. Loại bỏ thông tin trùng lặp giữa các nguồn
+3. Tổng hợp thông tin từ nhiều nguồn thành nội dung thống nhất
+4. Sử dụng định dạng Markdown với tiêu đề, danh sách, bảng biểu
+5. Giữ lại thông tin quan trọng, loại bỏ quảng cáo
+6. Viết bằng tiếng Việt, phong cách wiki chuyên nghiệp
+7. Thêm các phần: Giới thiệu, Nội dung chính, Kết luận
+
+NỘI DUNG CẦN XỬ LÝ:
+{content}
+
+BÀI VIẾT WIKI HOÀN CHỈNH:</textarea>
+            <small>💡 Sử dụng {content} để chèn nội dung cần xử lý. {topic} để chèn chủ đề.</small>
+        </div>
+        
+        <div class="cleaner-actions">
+            <button type="submit" class="btn btn-primary">
+                ✨ Làm sạch với prompt tùy chỉnh
+            </button>
+            <button type="button" class="btn btn-secondary" onclick="resetPrompt()">
+                🔄 Reset prompt mặc định
+            </button>
+            <button type="button" class="btn btn-secondary" onclick="checkRawFiles()">
+                📄 Kiểm tra file thô
+            </button>
+        </div>
+    </form>
+    
+    <div id="cleanerResults" class="results-container" style="display: none;">
+        <h3>Kết quả</h3>
+        <div id="cleanerOutput"></div>
+    </div>
+</div>
+
+
+
+<!-- Quick Actions -->
+<div class="quick-actions">
+    <h2>⚡ Thao tác nhanh</h2>
+    <div class="actions-grid">
+        <button class="action-btn" onclick="viewRawContent()">
+            �  Xem file raw_content
+        </button>
+        <button class="action-btn" onclick="viewCleanedContent()">
+            📁 Xem file cleaned_content
+        </button>
+        <button class="action-btn" onclick="viewAllPages()">
+            � Xem  tất cả trang
+        </button>
+    </div>
+</div>
+
+<!-- File Viewer Modal -->
+<div id="fileViewerModal" class="modal" style="display: none;">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3 id="modalTitle">Quản lý file</h3>
+            <button class="modal-close" onclick="closeFileViewer()">&times;</button>
+        </div>
+        <div class="modal-body">
+            <div id="fileList" class="file-list">
+                <!-- File list will be populated here -->
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-secondary" onclick="closeFileViewer()">Đóng</button>
+            <button id="deleteAllBtn" class="btn btn-danger" onclick="deleteAllFiles()" style="display: none;">
+                🗑️ Xóa tất cả
+            </button>
+        </div>
+    </div>
+</div>
+
+<style>
+.system-status {
+    background: white;
+    padding: 2rem;
+    border-radius: 10px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    margin-bottom: 2rem;
+}
+
+.status-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 1rem;
+    margin-top: 1rem;
+    max-width: 300px;
+}
+
+.status-card {
+    background: #f8f9fa;
+    padding: 1rem;
+    border-radius: 8px;
+    border-left: 4px solid #2c5530;
+}
+
+.status-card h4 {
+    margin-bottom: 0.5rem;
+    color: #2c5530;
+}
+
+.status-text {
+    margin: 0;
+    font-size: 0.9rem;
+}
+
+.crawler-section, .cleaner-section {
+    background: white;
+    padding: 2rem;
+    border-radius: 10px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    margin-bottom: 2rem;
+}
+
+.crawler-form, .cleaner-form {
+    max-width: 600px;
+}
+
+.task-monitor {
+    background: white;
+    padding: 2rem;
+    border-radius: 10px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    margin-bottom: 2rem;
+    border: 2px solid #2c5530;
+}
+
+.task-info {
+    background: #f8f9fa;
+    padding: 1rem;
+    border-radius: 5px;
+    margin-bottom: 1rem;
+}
+
+.status-badge {
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 0.8rem;
+    font-weight: bold;
+}
+
+.status-badge.running {
+    background: #ffc107;
+    color: #000;
+}
+
+.status-badge.completed {
+    background: #28a745;
+    color: white;
+}
+
+.status-badge.failed {
+    background: #dc3545;
+    color: white;
+}
+
+.logs-container {
+    background: #000;
+    color: #00ff00;
+    padding: 1rem;
+    border-radius: 5px;
+    font-family: 'Courier New', monospace;
+    font-size: 0.9rem;
+    max-height: 400px;
+    overflow-y: auto;
+    white-space: pre-wrap;
+}
+
+.cleaner-actions {
+    display: flex;
+    gap: 1rem;
+    margin-bottom: 1rem;
+}
+
+.results-container {
+    background: #f8f9fa;
+    padding: 1rem;
+    border-radius: 5px;
+    margin-top: 1rem;
+}
+
+.quick-actions {
+    background: white;
+    padding: 2rem;
+    border-radius: 10px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+}
+
+.actions-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 1rem;
+    margin-top: 1rem;
+}
+
+.action-btn {
+    background: #e9ecef;
+    border: none;
+    padding: 1rem;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: background 0.3s;
+    font-size: 0.9rem;
+}
+
+.action-btn:hover {
+    background: #2c5530;
+    color: white;
+}
+
+.danger-btn {
+    background: #dc3545 !important;
+    color: white !important;
+}
+
+.danger-btn:hover {
+    background: #c82333 !important;
+}
+
+.loading {
+    opacity: 0.6;
+    pointer-events: none;
+}
+
+/* Modal styles */
+.modal {
+    position: fixed;
+    z-index: 1000;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0,0,0,0.5);
+}
+
+.modal-content {
+    background-color: white;
+    margin: 5% auto;
+    padding: 0;
+    border-radius: 10px;
+    width: 80%;
+    max-width: 800px;
+    max-height: 80vh;
+    overflow: hidden;
+}
+
+.modal-header {
+    background: #2c5530;
+    color: white;
+    padding: 1rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.modal-close {
+    background: none;
+    border: none;
+    color: white;
+    font-size: 1.5rem;
+    cursor: pointer;
+}
+
+.modal-body {
+    padding: 1rem;
+    max-height: 60vh;
+    overflow-y: auto;
+}
+
+.modal-footer {
+    padding: 1rem;
+    border-top: 1px solid #eee;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.file-list {
+    display: grid;
+    gap: 0.5rem;
+}
+
+.file-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.75rem;
+    background: #f8f9fa;
+    border-radius: 5px;
+    border-left: 4px solid #2c5530;
+}
+
+.file-info {
+    flex: 1;
+}
+
+.file-name {
+    font-weight: bold;
+    margin-bottom: 0.25rem;
+}
+
+.file-meta {
+    font-size: 0.8rem;
+    color: #666;
+}
+
+.file-actions {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.file-btn {
+    padding: 0.25rem 0.5rem;
+    border: none;
+    border-radius: 3px;
+    cursor: pointer;
+    font-size: 0.8rem;
+}
+
+.file-btn.delete {
+    background: #dc3545;
+    color: white;
+}
+
+.file-btn.delete:hover {
+    background: #c82333;
+}
+
+.no-files-message {
+    background: #fff3cd;
+    border: 1px solid #ffeaa7;
+    border-radius: 8px;
+    padding: 1.5rem;
+    margin: 1rem 0;
+}
+
+.no-files-message h4 {
+    color: #856404;
+    margin-bottom: 1rem;
+}
+
+.no-files-message p {
+    margin-bottom: 0.5rem;
+    color: #856404;
+}
+
+.no-files-message ol {
+    margin: 0.5rem 0 0.5rem 1.5rem;
+    color: #856404;
+}
+
+.files-info {
+    background: #d1ecf1;
+    border: 1px solid #bee5eb;
+    border-radius: 8px;
+    padding: 1rem;
+    margin: 1rem 0;
+}
+
+.files-info h4 {
+    color: #0c5460;
+    margin-bottom: 0.5rem;
+}
+
+.files-info ul {
+    margin: 0.5rem 0 0 1.5rem;
+    color: #0c5460;
+}
+
+.success-summary {
+    background: #d4edda;
+    border: 1px solid #c3e6cb;
+    border-radius: 8px;
+    padding: 1.5rem;
+    margin: 1rem 0;
+}
+
+.success-summary h4 {
+    color: #155724;
+    margin-bottom: 1rem;
+}
+
+.process-summary {
+    background: #f8f9fa;
+    padding: 1rem;
+    border-radius: 5px;
+    margin: 1rem 0;
+    border-left: 4px solid #28a745;
+}
+
+.process-summary ul {
+    margin: 0.5rem 0 0 1.5rem;
+    color: #155724;
+}
+
+.detailed-results {
+    margin-top: 1rem;
+}
+
+.detailed-results h5 {
+    color: #155724;
+    margin-bottom: 0.5rem;
+}
+
+.detailed-results ul {
+    margin: 0.5rem 0 0 1rem;
+}
+
+.wiki-success {
+    background: #e7f3ff;
+    padding: 0.75rem;
+    border-radius: 5px;
+    margin-bottom: 0.5rem;
+    border-left: 4px solid #007bff;
+}
+
+.wiki-success a {
+    color: #007bff;
+    text-decoration: none;
+    font-weight: bold;
+}
+
+.wiki-success a:hover {
+    text-decoration: underline;
+}
+
+.error-item {
+    background: #f8d7da;
+    padding: 0.5rem;
+    border-radius: 5px;
+    margin-bottom: 0.25rem;
+    border-left: 4px solid #dc3545;
+    color: #721c24;
+}
+
+.skipped-item {
+    background: #fff3cd;
+    padding: 0.5rem;
+    border-radius: 5px;
+    margin-bottom: 0.25rem;
+    border-left: 4px solid #ffc107;
+    color: #856404;
+}
+
+
+</style>
+
+<script>
+let currentTaskId = null;
+let statusInterval = null;
+
+// Load system status on page load
+document.addEventListener('DOMContentLoaded', function() {
+    refreshSystemStatus();
+});
+
+// Refresh system status
+async function refreshSystemStatus() {
+    console.log('🔍 Refreshing system status...');
+    try {
+        const response = await fetch('/admin/api/system/status');
+        const data = await response.json();
+        
+        // Update Ollama status
+        const ollamaCard = document.getElementById('ollamaStatus');
+        const ollamaText = ollamaCard.querySelector('.status-text');
+        if (data.ollama.status === 'connected') {
+            ollamaText.textContent = '✅ Đã kết nối';
+            ollamaText.style.color = '#28a745';
+        } else {
+            ollamaText.textContent = '❌ Chưa kết nối';
+            ollamaText.style.color = '#dc3545';
+        }
+        
+
+        
+    } catch (error) {
+        console.error('Error refreshing status:', error);
+    }
+}
+
+// Handle crawler form submission
+document.getElementById('crawlerForm').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    
+    const formData = new FormData(this);
+    const startBtn = document.getElementById('startCrawlerBtn');
+    
+    // Validate URLs
+    const urls = formData.get('urls').trim();
+    const urlList = urls.split('\n').filter(url => url.trim());
+    
+    if (urlList.length < 1) {
+        alert('Cần ít nhất 1 URL để thu thập!');
+        return;
+    }
+    
+    if (urlList.length > 5) {
+        alert('Tối đa 5 URL mỗi lần!');
+        return;
+    }
+    
+    // Validate URL format
+    for (let url of urlList) {
+        if (!url.startsWith('http://') && !url.startsWith('https://')) {
+            alert(`URL không hợp lệ: ${url}`);
+            return;
+        }
+    }
+    
+    // Start crawler
+    startBtn.textContent = '⏳ Đang khởi động...';
+    startBtn.disabled = true;
+    
+    try {
+        const response = await fetch('/admin/api/crawler/start', {
+            method: 'POST',
+            body: formData
+        });
+        
+        const result = await response.json();
+        
+        if (response.ok) {
+            currentTaskId = result.task_id;
+            showTaskMonitor(result.task_id);
+            startStatusPolling();
+            
+            // Reset form
+            this.reset();
+        } else {
+            alert(`Lỗi: ${result.error}`);
+        }
+        
+    } catch (error) {
+        alert(`Lỗi kết nối: ${error.message}`);
+    } finally {
+        startBtn.textContent = '🚀 Bắt đầu thu thập';
+        startBtn.disabled = false;
+    }
+});
+
+// Show task monitor
+function showTaskMonitor(taskId) {
+    currentTaskId = taskId;
+    document.getElementById('currentTaskId').textContent = taskId;
+    document.getElementById('currentTaskStatus').textContent = 'running';
+    document.getElementById('currentTaskStatus').className = 'status-badge running';
+    document.getElementById('taskLogs').textContent = 'Đang khởi động...';
+    document.getElementById('taskMonitor').style.display = 'block';
+    
+    // Scroll to monitor
+    document.getElementById('taskMonitor').scrollIntoView({ behavior: 'smooth' });
+}
+
+// Hide task monitor
+function hideTaskMonitor() {
+    document.getElementById('taskMonitor').style.display = 'none';
+    if (statusInterval) {
+        clearInterval(statusInterval);
+        statusInterval = null;
+    }
+    currentTaskId = null;
+}
+
+// Start status polling
+function startStatusPolling() {
+    if (statusInterval) {
+        clearInterval(statusInterval);
+    }
+    
+    statusInterval = setInterval(async () => {
+        if (!currentTaskId) return;
+        
+        try {
+            const response = await fetch(`/admin/api/crawler/status/${currentTaskId}`);
+            const data = await response.json();
+            
+            // Update status
+            const statusElement = document.getElementById('currentTaskStatus');
+            statusElement.textContent = data.status;
+            statusElement.className = `status-badge ${data.status}`;
+            
+            // Update logs
+            const logsElement = document.getElementById('taskLogs');
+            if (data.logs && data.logs.length > 0) {
+                logsElement.textContent = data.logs.join('\n');
+                logsElement.scrollTop = logsElement.scrollHeight;
+            }
+            
+            // Stop polling if completed or failed
+            if (data.status === 'completed' || data.status === 'failed') {
+                clearInterval(statusInterval);
+                statusInterval = null;
+                
+                // Refresh system status
+                setTimeout(refreshSystemStatus, 1000);
+            }
+            
+        } catch (error) {
+            console.error('Error polling status:', error);
+        }
+    }, 2000);
+}
+
+// Refresh logs manually
+async function refreshLogs() {
+    if (!currentTaskId) return;
+    
+    try {
+        const response = await fetch(`/admin/api/crawler/logs/${currentTaskId}`);
+        const data = await response.json();
+        
+        const logsElement = document.getElementById('taskLogs');
+        if (data.logs && data.logs.length > 0) {
+            logsElement.textContent = data.logs.join('\n');
+            logsElement.scrollTop = logsElement.scrollHeight;
+        }
+    } catch (error) {
+        console.error('Error refreshing logs:', error);
+    }
+}
+
+// Handle cleaner form submission
+document.getElementById('cleanerForm').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    
+    const resultsDiv = document.getElementById('cleanerResults');
+    const outputDiv = document.getElementById('cleanerOutput');
+    const aiPrompt = document.getElementById('aiPrompt').value.trim();
+    
+    if (!aiPrompt) {
+        alert('Vui lòng nhập AI prompt!');
+        return;
+    }
+    
+    // Kiểm tra file raw trước khi xử lý
+    outputDiv.innerHTML = '🔍 Đang kiểm tra file raw...';
+    resultsDiv.style.display = 'block';
+    
+    try {
+        const checkResponse = await fetch('/admin/api/files/raw_content');
+        const checkData = await checkResponse.json();
+        
+        if (!checkResponse.ok) {
+            outputDiv.innerHTML = `❌ Lỗi kiểm tra file: ${checkData.error}`;
+            return;
+        }
+        
+        const files = checkData.files || [];
+        const summaryFiles = files.filter(f => f.name.startsWith('summary_'));
+        const regularFiles = files.filter(f => !f.name.startsWith('summary_'));
+        
+        if (summaryFiles.length === 0 && regularFiles.length === 0) {
+            outputDiv.innerHTML = `
+                <div class="no-files-message">
+                    <h4>📂 Không có file raw để xử lý</h4>
+                    <p>Thư mục <code>raw_content/</code> đang trống.</p>
+                    <p><strong>Hướng dẫn:</strong></p>
+                    <ol>
+                        <li>Sử dụng <strong>Multi-Source Crawler</strong> để thu thập nội dung trước</li>
+                        <li>Sau khi crawler hoàn tất, quay lại đây để xử lý AI</li>
+                    </ol>
+                    <p>💡 <em>Crawler sẽ tạo file raw tự động khi thu thập xong.</em></p>
+                </div>
+            `;
+            return;
+        }
+        
+        // Hiển thị thông tin file sẽ xử lý
+        let fileInfo = `<div class="files-info">
+            <h4>📋 Sẽ xử lý ${files.length} file:</h4>
+            <ul>`;
+        
+        if (summaryFiles.length > 0) {
+            fileInfo += `<li>🎯 ${summaryFiles.length} file tổng hợp (tạo wiki)</li>`;
+        }
+        if (regularFiles.length > 0) {
+            fileInfo += `<li>📄 ${regularFiles.length} file thông thường (làm sạch)</li>`;
+        }
+        
+        fileInfo += `</ul></div>`;
+        
+        outputDiv.innerHTML = fileInfo + '<p>⏳ Đang xử lý với AI...</p>';
+        
+    } catch (error) {
+        outputDiv.innerHTML = `❌ Lỗi kiểm tra file: ${error.message}`;
+        return;
+    }
+    
+    try {
+        const formData = new FormData();
+        formData.append('action', 'batch');
+        formData.append('custom_prompt', aiPrompt);
+        
+        const response = await fetch('/admin/api/clean-text', {
+            method: 'POST',
+            body: formData
+        });
+        
+        const result = await response.json();
+        
+        if (response.ok) {
+            let html = `<div class="success-summary">
+                <h4>🎉 ${result.message}</h4>
+            `;
+            
+            // Hiển thị thống kê tổng quan
+            if (result.summary) {
+                html += `<div class="process-summary">
+                    <p><strong>📊 Tổng kết:</strong></p>
+                    <ul>`;
+                
+                if (result.summary.wiki_created > 0) {
+                    html += `<li>🎯 <strong>${result.summary.wiki_created} bài wiki</strong> đã được tạo thành công</li>`;
+                }
+                if (result.summary.skipped > 0) {
+                    html += `<li>⏭️ <strong>${result.summary.skipped} nhóm file</strong> đã bỏ qua (chỉ xử lý summary)</li>`;
+                }
+                if (result.summary.failed > 0) {
+                    html += `<li>❌ <strong>${result.summary.failed} file</strong> xử lý thất bại</li>`;
+                }
+                
+                html += `</ul></div>`;
+            }
+            
+            // Hiển thị chi tiết từng file
+            html += `<div class="detailed-results"><h5>📋 Chi tiết:</h5><ul>`;
+            
+            result.results.forEach(item => {
+                if (item.status === 'success') {
+                    if (item.type === 'wiki_created') {
+                        html += `<li class="wiki-success">
+                            🎯 <strong>Wiki tạo thành công:</strong> "${item.wiki_title}"<br>
+                            📄 Từ ${item.sources_count} nguồn | Phương pháp: ${item.method}<br>
+                            🔗 <a href="${item.wiki_url}" target="_blank">Xem bài viết</a>
+                        </li>`;
+                    } else {
+                        html += `<li>✅ ${item.input} → ${item.output}</li>`;
+                    }
+                } else if (item.status === 'skipped') {
+                    html += `<li class="skipped-item">⏭️ ${item.input}: ${item.output}</li>`;
+                } else {
+                    html += `<li class="error-item">❌ ${item.input}: ${item.error}</li>`;
+                }
+            });
+            
+            html += '</ul></div></div>';
+            outputDiv.innerHTML = html;
+            
+            // Refresh system status
+            setTimeout(refreshSystemStatus, 1000);
+        } else {
+            outputDiv.innerHTML = `❌ Lỗi: ${result.error}`;
+        }
+        
+    } catch (error) {
+        outputDiv.innerHTML = `❌ Lỗi kết nối: ${error.message}`;
+    }
+});
+
+// Reset prompt to default
+function resetPrompt() {
+    const defaultPrompt = `Bạn là chuyên gia viết bài về nông nghiệp. Hãy tổng hợp và viết lại nội dung sau thành một bài viết wiki hoàn chỉnh.
+
+YÊU CẦU:
+1. Tạo một bài viết mạch lạc, có cấu trúc rõ ràng
+2. Loại bỏ thông tin trùng lặp giữa các nguồn
+3. Tổng hợp thông tin từ nhiều nguồn thành nội dung thống nhất
+4. Sử dụng định dạng Markdown với tiêu đề, danh sách, bảng biểu
+5. Giữ lại thông tin quan trọng, loại bỏ quảng cáo
+6. Viết bằng tiếng Việt, phong cách wiki chuyên nghiệp
+7. Thêm các phần: Giới thiệu, Nội dung chính, Kết luận
+
+NỘI DUNG CẦN XỬ LÝ:
+{content}
+
+BÀI VIẾT WIKI HOÀN CHỈNH:`;
+    
+    document.getElementById('aiPrompt').value = defaultPrompt;
+}
+
+// Check raw files
+async function checkRawFiles() {
+    const resultsDiv = document.getElementById('cleanerResults');
+    const outputDiv = document.getElementById('cleanerOutput');
+    
+    outputDiv.innerHTML = '🔍 Đang kiểm tra file raw...';
+    resultsDiv.style.display = 'block';
+    
+    try {
+        const response = await fetch('/admin/api/files/raw_content');
+        const data = await response.json();
+        
+        if (!response.ok) {
+            outputDiv.innerHTML = `❌ Lỗi: ${data.error}`;
+            return;
+        }
+        
+        const files = data.files || [];
+        const summaryFiles = files.filter(f => f.name.startsWith('summary_'));
+        const regularFiles = files.filter(f => !f.name.startsWith('summary_'));
+        
+        if (files.length === 0) {
+            outputDiv.innerHTML = `
+                <div class="no-files-message">
+                    <h4>📂 Thư mục raw_content trống</h4>
+                    <p>Chưa có file nào để xử lý.</p>
+                    <p><strong>Hướng dẫn:</strong></p>
+                    <ol>
+                        <li>Sử dụng <strong>Multi-Source Crawler</strong> để thu thập nội dung</li>
+                        <li>Sau khi crawler hoàn tất, file raw sẽ xuất hiện ở đây</li>
+                    </ol>
+                </div>
+            `;
+            return;
+        }
+        
+        let html = `<div class="files-info">
+            <h4>📋 File raw hiện có (${files.length} file):</h4>
+        `;
+        
+        if (summaryFiles.length > 0) {
+            html += `<h5>🎯 File tổng hợp (${summaryFiles.length}):</h5><ul>`;
+            summaryFiles.forEach(file => {
+                const sizeKB = (file.size / 1024).toFixed(1);
+                html += `<li>📄 ${file.name} (${sizeKB} KB - ${file.modified})</li>`;
+            });
+            html += '</ul>';
+        }
+        
+        if (regularFiles.length > 0) {
+            html += `<h5>📄 File thông thường (${regularFiles.length}):</h5><ul>`;
+            regularFiles.forEach(file => {
+                const sizeKB = (file.size / 1024).toFixed(1);
+                html += `<li>📄 ${file.name} (${sizeKB} KB - ${file.modified})</li>`;
+            });
+            html += '</ul>';
+        }
+        
+        html += `</div>
+            <p><strong>💡 Sẵn sàng xử lý:</strong> Sử dụng nút "Làm sạch với prompt tùy chỉnh" để bắt đầu.</p>
+        `;
+        
+        outputDiv.innerHTML = html;
+        
+    } catch (error) {
+        outputDiv.innerHTML = `❌ Lỗi kiểm tra file: ${error.message}`;
+    }
+}
+
+// Clear form
+function clearForm() {
+    document.getElementById('crawlerForm').reset();
+}
+
+// Quick actions
+function viewAllPages() {
+    window.location.href = '/admin/dashboard';
+}
+
+// File viewer functions
+let currentFileType = '';
+
+function viewRawContent() {
+    currentFileType = 'raw_content';
+    showFileViewer('📁 File Raw Content', 'raw_content');
+}
+
+function viewCleanedContent() {
+    currentFileType = 'cleaned_content';
+    showFileViewer('📁 File Cleaned Content', 'cleaned_content');
+}
+
+async function showFileViewer(title, type) {
+    document.getElementById('modalTitle').textContent = title;
+    document.getElementById('fileViewerModal').style.display = 'block';
+    document.getElementById('deleteAllBtn').style.display = 'block';
+    
+    // Load file list
+    await loadFileList(type);
+}
+
+async function loadFileList(type) {
+    const fileListDiv = document.getElementById('fileList');
+    fileListDiv.innerHTML = '⏳ Đang tải danh sách file...';
+    
+    try {
+        const response = await fetch(`/admin/api/files/${type}`);
+        const data = await response.json();
+        
+        if (!response.ok) {
+            throw new Error(data.error || 'Lỗi tải file');
+        }
+        
+        const files = data.files || [];
+        
+        if (files.length === 0) {
+            fileListDiv.innerHTML = `<p>📂 Thư mục ${type} trống</p>`;
+            document.getElementById('deleteAllBtn').style.display = 'none';
+            return;
+        }
+        
+        // Show file list
+        let html = `
+            <div class="file-summary">
+                <p><strong>📊 Tổng cộng: ${files.length} file</strong></p>
+            </div>
+        `;
+        
+        files.forEach(file => {
+            const sizeKB = (file.size / 1024).toFixed(1);
+            html += `
+                <div class="file-item">
+                    <div class="file-info">
+                        <div class="file-name">📄 ${file.name}</div>
+                        <div class="file-meta">
+                            📏 ${sizeKB} KB • 🕒 ${file.modified}
+                        </div>
+                    </div>
+                    <div class="file-actions">
+                        <button class="file-btn delete" onclick="deleteSingleFile('${type}', '${file.name}')">
+                            🗑️ Xóa
+                        </button>
+                    </div>
+                </div>
+            `;
+        });
+        
+        fileListDiv.innerHTML = html;
+        document.getElementById('deleteAllBtn').style.display = 'block';
+        
+    } catch (error) {
+        fileListDiv.innerHTML = `❌ Lỗi tải danh sách: ${error.message}`;
+        document.getElementById('deleteAllBtn').style.display = 'none';
+    }
+}
+
+function closeFileViewer() {
+    document.getElementById('fileViewerModal').style.display = 'none';
+    currentFileType = '';
+}
+
+async function deleteSingleFile(folder, filename) {
+    if (!confirm(`⚠️ Bạn có chắc muốn xóa file "${filename}"?`)) {
+        return;
+    }
+    
+    try {
+        const response = await fetch(`/admin/api/files/${folder}/${encodeURIComponent(filename)}`, {
+            method: 'DELETE'
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            alert(`✅ Đã xóa file "${filename}" thành công!`);
+            // Reload file list
+            await loadFileList(folder);
+            // Refresh system status
+            refreshSystemStatus();
+        } else {
+            alert(`❌ Lỗi: ${result.error}`);
+        }
+        
+    } catch (error) {
+        alert(`❌ Lỗi kết nối: ${error.message}`);
+    }
+}
+
+async function deleteAllFiles() {
+    if (!currentFileType) return;
+    
+    const typeNames = {
+        'raw_content': 'file raw content',
+        'cleaned_content': 'file cleaned content'
+    };
+    
+    if (!confirm(`⚠️ Bạn có chắc muốn xóa tất cả ${typeNames[currentFileType]}?`)) {
+        return;
+    }
+    
+    try {
+        const formData = new FormData();
+        formData.append('target', currentFileType);
+        
+        const response = await fetch('/admin/api/cleanup', {
+            method: 'POST',
+            body: formData
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            alert(`✅ Đã xóa tất cả ${typeNames[currentFileType]} thành công!`);
+            closeFileViewer();
+            refreshSystemStatus();
+        } else {
+            alert(`❌ Lỗi: ${result.error}`);
+        }
+        
+    } catch (error) {
+        alert(`❌ Lỗi kết nối: ${error.message}`);
+    }
+}
+
+
+</script>
+{% endblock %}

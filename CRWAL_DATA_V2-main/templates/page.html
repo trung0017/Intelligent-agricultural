@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+
+{% block title %}{{ title }} - WikiNongSan{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>{{ title }}</h1>
+    <div class="page-actions">
+        <a href="/" class="btn btn-secondary">← Về trang chủ</a>
+    </div>
+</div>
+
+<div class="content-grid">
+    <div class="main-content">
+        <article class="page-content">
+            {{ content|safe }}
+        </article>
+        
+        <div class="page-footer">
+            <p><em>Bài viết này có thể được cập nhật thường xuyên để đảm bảo thông tin chính xác nhất.</em></p>
+        </div>
+    </div>
+    
+    <div class="sidebar">
+        <div class="widget">
+            <h3>Điều hướng</h3>
+            <ul>
+                <li><a href="/">Trang chủ</a></li>
+                <li><a href="/search">Tìm kiếm</a></li>
+            </ul>
+        </div>
+        
+        <div class="widget">
+            <h3>Tìm kiếm liên quan</h3>
+            <form action="/search" method="get">
+                <input type="text" name="q" placeholder="Tìm bài viết khác..." class="search-input-small">
+                <button type="submit" class="btn btn-small">Tìm</button>
+            </form>
+        </div>
+        
+        <div class="widget">
+            <h3>Hình ảnh nổi bật</h3>
+            <div class="sidebar-image">
+                <img id="sidebarImg" src="/static/uploads/{{ slug }}.jpg" alt="Hình ảnh bài viết" 
+                     onerror="this.style.display='none'; document.getElementById('noImageText').style.display='block';">
+                <p id="noImageText" style="display: none; text-align: center; color: #666; font-style: italic;">
+                    Chưa có hình ảnh cho bài viết này
+                </p>
+            </div>
+        </div>
+    </div>
+</div>
+
+
+{% endblock %}

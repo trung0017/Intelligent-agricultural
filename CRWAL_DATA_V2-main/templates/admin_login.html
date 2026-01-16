@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+
+{% block title %}Đăng nhập Admin - WikiNongSan{% endblock %}
+
+{% block content %}
+<div class="admin-login">
+    <div class="login-container">
+        <h1>Đăng nhập Quản trị viên</h1>
+        
+        <form action="/admin/login" method="post" class="login-form">
+            <div class="form-group">
+                <label for="username">Tên đăng nhập:</label>
+                <input type="text" id="username" name="username" required class="form-input">
+            </div>
+            
+            <div class="form-group">
+                <label for="password">Mật khẩu:</label>
+                <input type="password" id="password" name="password" required class="form-input">
+            </div>
+            
+            <button type="submit" class="btn btn-primary btn-full">Đăng nhập</button>
+        </form>
+        
+
+        <div class="back-link">
+            <a href="/">← Về trang chủ</a>
+        </div>
+    </div>
+</div>
+{% endblock %}

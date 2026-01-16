@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+
+{% block title %}Tạo trang mới - WikiNongSan{% endblock %}
+
+{% block content %}
+<div class="admin-header">
+    <h1>Tạo trang mới</h1>
+    <div class="admin-actions">
+        <a href="/admin/dashboard" class="btn btn-secondary">← Về Dashboard</a>
+    </div>
+</div>
+
+<div class="admin-content">
+    <form action="/admin/create" method="post" class="page-form">
+        <div class="form-group">
+            <label for="title">Tiêu đề trang:</label>
+            <input type="text" id="title" name="title" required class="form-input" 
+                   placeholder="Ví dụ: Kỹ thuật trồng lúa năng suất cao">
+            <small>Tiêu đề sẽ được chuyển thành slug tự động</small>
+        </div>
+        
+        <div class="form-group">
+            <label for="content">Nội dung (Markdown):</label>
+            <textarea id="content" name="content" required class="form-textarea" rows="20"
+                      placeholder="Nhập nội dung bằng Markdown...
+
+Ví dụ:
+## Giới thiệu
+Lúa là cây lương thực chính của Việt Nam...
+
+## Kỹ thuật trồng
+### Chuẩn bị đất
+- Làm đất sâu 15-20cm
+- Bón phân chuồng 2-3 tấn/ha
+
+### Gieo sạ
+- Giống lúa chất lượng cao
+- Mật độ gieo: 120-150kg/ha
+
+## Chăm sóc
+..."></textarea>
+        </div>
+        
+        <div class="form-actions">
+            <button type="submit" class="btn btn-primary">Tạo trang</button>
+            <a href="/admin/dashboard" class="btn btn-secondary">Hủy</a>
+        </div>
+    </form>
+    
+    <div class="markdown-help">
+        <h3>Hướng dẫn Markdown</h3>
+        <div class="help-grid">
+            <div class="help-item">
+                <strong># Tiêu đề 1</strong>
+                <p>Tiêu đề chính</p>
+            </div>
+            <div class="help-item">
+                <strong>## Tiêu đề 2</strong>
+                <p>Tiêu đề phụ</p>
+            </div>
+            <div class="help-item">
+                <strong>**Chữ đậm**</strong>
+                <p>Làm đậm văn bản</p>
+            </div>
+            <div class="help-item">
+                <strong>*Chữ nghiêng*</strong>
+                <p>Làm nghiêng văn bản</p>
+            </div>
+            <div class="help-item">
+                <strong>- Danh sách</strong>
+                <p>Tạo danh sách</p>
+            </div>
+            <div class="help-item">
+                <strong>[Liên kết](URL)</strong>
+                <p>Tạo liên kết</p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

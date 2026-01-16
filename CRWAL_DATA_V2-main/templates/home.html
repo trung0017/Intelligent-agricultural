@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+
+{% block title %}WikiNongSan - Trang chủ{% endblock %}
+
+{% block content %}
+<div class="home-header">
+    <h1>Chào mừng đến với WikiNongSan</h1>
+    <p class="subtitle">Bách khoa toàn thư về nông nghiệp và phát triển nông thôn Việt Nam</p>
+    
+    <div class="search-box">
+        <form action="/search" method="get">
+            <input type="text" name="q" placeholder="Tìm kiếm bài viết..." class="search-input">
+            <button type="submit" class="search-btn">Tìm kiếm</button>
+        </form>
+    </div>
+</div>
+
+<div class="content-grid">
+    <div class="main-content">
+        <h2>Danh sách bài viết</h2>
+        
+        {% if pages %}
+        <div class="pages-grid">
+            {% for page in pages %}
+            <div class="page-card">
+                <h3><a href="/page/{{ page.slug }}">{{ page.title }}</a></h3>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="empty-state">
+            <h3>Chưa có bài viết nào</h3>
+            <p>Nội dung sẽ được cập nhật thường xuyên từ các nguồn tin uy tín về nông nghiệp.</p>
+        </div>
+        {% endif %}
+    </div>
+    
+    <div class="sidebar">
+        <div class="widget">
+            <h3>Thống kê</h3>
+            <ul>
+                <li>Tổng bài viết: {{ pages|length }}</li>
+                <li>Cập nhật: Hàng ngày</li>
+            </ul>
+        </div>
+        
+        <div class="widget">
+            <h3>Chủ đề phổ biến</h3>
+            <ul>
+                <li><a href="/search?q=lúa">Trồng lúa</a></li>
+                <li><a href="/search?q=rau">Trồng rau</a></li>
+                <li><a href="/search?q=chăn nuôi">Chăn nuôi</a></li>
+                <li><a href="/search?q=công nghệ">Công nghệ nông nghiệp</a></li>
+            </ul>
+        </div>
+        
+        <div class="widget">
+            <h3>Công cụ</h3>
+            <ul>
+                <li><a href="/search">Tìm kiếm nâng cao</a></li>
+            </ul>
+        </div>
+    </div>
+</div>
+{% endblock %}

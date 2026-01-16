@@ -1,0 +1,333 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard Admin - WikiNongSan{% endblock %}
+
+{% block content %}
+<div class="admin-header">
+    <h1>Dashboard Quản trị viên</h1>
+    <div class="admin-actions">
+        <a href="/admin/create" class="btn btn-primary">+ Tạo trang mới</a>
+        <a href="/admin/crawler" class="btn btn-primary">🕷️ Crawler & AI</a>
+        <a href="/" class="btn btn-secondary">Xem trang chủ</a>
+    </div>
+</div>
+
+<div class="admin-stats">
+    <div class="stat-card">
+        <h3>{{ pages|length }}</h3>
+        <p>Tổng số trang</p>
+    </div>
+    <div class="stat-card">
+        <h3>1</h3>
+        <p>Admin đang hoạt động</p>
+    </div>
+    <div class="stat-card">
+        <h3>100%</h3>
+        <p>Hệ thống hoạt động</p>
+    </div>
+</div>
+
+<div class="admin-content">
+    <div class="admin-section">
+        <h2>Quản lý trang</h2>
+        
+        {% if pages %}
+        <div class="bulk-actions">
+            <button onclick="selectAllPages()" class="btn btn-small">Chọn tất cả</button>
+            <button onclick="deleteSelectedPages()" class="btn btn-small btn-danger">Xóa đã chọn</button>
+            <button onclick="deleteAllPages()" class="btn btn-small btn-danger">🗑️ Xóa tất cả</button>
+            <span id="selectedCount" class="selected-count">0 trang được chọn</span>
+        </div>
+        
+        <div class="pages-table">
+            <table>
+                <thead>
+                    <tr>
+                        <th><input type="checkbox" id="selectAll" onchange="toggleSelectAll()"></th>
+                        <th>Tiêu đề</th>
+                        <th>Slug</th>
+                        <th>Thao tác</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for page in pages %}
+                    <tr>
+                        <td><input type="checkbox" class="page-checkbox" value="{{ page.slug }}" onchange="updateSelectedCount()"></td>
+                        <td><a href="/page/{{ page.slug }}">{{ page.title }}</a></td>
+                        <td><code>{{ page.slug }}</code></td>
+                        <td class="actions">
+                            <a href="/page/{{ page.slug }}" class="btn btn-small">Xem</a>
+                            <a href="/admin/edit/{{ page.slug }}" class="btn btn-small btn-primary">Sửa</a>
+                            <button data-slug="{{ page.slug }}"
+                                    class="btn btn-small btn-danger delete-btn">Xóa</button>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="empty-state">
+            <p>Chưa có trang nào. <a href="/admin/create">Tạo trang đầu tiên</a></p>
+        </div>
+        {% endif %}
+    </div>
+    
+
+    
+    <div class="admin-section">
+        <h2>Công cụ hệ thống</h2>
+        <div class="tools-grid">
+            <div class="tool-card">
+                <h4>🕷️ Web Crawler</h4>
+                <p>Thu thập nội dung từ nhiều trang web và tổng hợp bằng AI</p>
+                <a href="/admin/crawler" class="btn btn-small btn-primary">Mở Crawler</a>
+            </div>
+            <div class="tool-card">
+                <h4>🤖 Text Cleaner</h4>
+                <p>Làm sạch văn bản bằng AI, tích hợp trong Crawler</p>
+                <a href="/admin/crawler" class="btn btn-small btn-primary">Mở AI Tools</a>
+            </div>
+
+
+        </div>
+    </div>
+</div>
+
+<style>
+.btn-danger {
+    background: #dc3545;
+    color: white;
+}
+
+.btn-danger:hover {
+    background: #c82333;
+}
+
+.actions {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+
+.bulk-actions {
+    display: flex;
+    gap: 1rem;
+    align-items: center;
+    margin-bottom: 1rem;
+    padding: 1rem;
+    background: #f8f9fa;
+    border-radius: 5px;
+    border-left: 4px solid #2c5530;
+}
+
+.selected-count {
+    font-weight: bold;
+    color: #2c5530;
+}
+
+.pages-table th:first-child,
+.pages-table td:first-child {
+    width: 40px;
+    text-align: center;
+}
+
+.page-checkbox {
+    cursor: pointer;
+}
+
+#selectAll {
+    cursor: pointer;
+}
+</style>
+
+<script>
+async function deletePage(deleteBtn) {
+    const slug = deleteBtn.getAttribute('data-slug');
+    
+    if (!slug) {
+        alert('Lỗi: Không tìm thấy slug');
+        return;
+    }
+    
+    try {
+
+        
+        // Hiển thị loading
+        const originalText = deleteBtn.textContent;
+        deleteBtn.textContent = 'Xóa...';
+        deleteBtn.disabled = true;
+        
+        // Gọi API xóa
+        const response = await fetch(`/admin/delete/${encodeURIComponent(slug)}`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        });
+        
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            // Xóa row khỏi table luôn, không cần reload
+            deleteBtn.closest('tr').remove();
+            updateSelectedCount();
+        } else {
+            alert(`Lỗi: ${result.error}`);
+            // Khôi phục nút
+            deleteBtn.textContent = originalText;
+            deleteBtn.disabled = false;
+        }
+        
+    } catch (error) {
+        alert(`Lỗi kết nối: ${error.message}`);
+        // Khôi phục nút
+        const btn = document.querySelector(`[data-slug="${slug}"]`);
+        if (btn) {
+            btn.textContent = 'Xóa';
+            btn.disabled = false;
+        }
+    }
+}
+
+// Bulk selection functions
+function toggleSelectAll() {
+    const selectAll = document.getElementById('selectAll');
+    const checkboxes = document.querySelectorAll('.page-checkbox');
+    
+    checkboxes.forEach(checkbox => {
+        checkbox.checked = selectAll.checked;
+    });
+    
+    updateSelectedCount();
+}
+
+function selectAllPages() {
+    const checkboxes = document.querySelectorAll('.page-checkbox');
+    checkboxes.forEach(checkbox => {
+        checkbox.checked = true;
+    });
+    document.getElementById('selectAll').checked = true;
+    updateSelectedCount();
+}
+
+function updateSelectedCount() {
+    const checkboxes = document.querySelectorAll('.page-checkbox:checked');
+    const count = checkboxes.length;
+    document.getElementById('selectedCount').textContent = `${count} trang được chọn`;
+    
+    // Update select all checkbox
+    const allCheckboxes = document.querySelectorAll('.page-checkbox');
+    const selectAll = document.getElementById('selectAll');
+    selectAll.checked = count === allCheckboxes.length;
+    selectAll.indeterminate = count > 0 && count < allCheckboxes.length;
+}
+
+async function deleteSelectedPages() {
+    const checkboxes = document.querySelectorAll('.page-checkbox:checked');
+    
+    if (checkboxes.length === 0) {
+        alert('Chọn trang để xóa!');
+        return;
+    }
+    
+    const slugs = Array.from(checkboxes).map(cb => cb.value);
+    let successCount = 0;
+    
+    // Xóa từng trang
+    for (const slug of slugs) {
+        try {
+            const response = await fetch(`/admin/delete/${slug}`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            });
+            
+            const result = await response.json();
+            
+            if (result.success) {
+                successCount++;
+                // Xóa row khỏi table
+                const checkbox = document.querySelector(`input[value="${slug}"]`);
+                if (checkbox) {
+                    checkbox.closest('tr').remove();
+                }
+            }
+            
+        } catch (error) {
+            console.error(`Lỗi xóa ${slug}:`, error);
+        }
+    }
+    
+    // Reset selections
+    document.getElementById('selectAll').checked = false;
+    updateSelectedCount();
+}
+
+
+
+async function deleteAllPages() {
+    try {
+        const response = await fetch('/admin/delete-all', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            // Xóa tất cả rows khỏi table
+            const tbody = document.querySelector('.pages-table tbody');
+            if (tbody) {
+                tbody.innerHTML = '';
+            }
+            
+            // Reset selections
+            document.getElementById('selectAll').checked = false;
+            updateSelectedCount();
+        } else {
+            alert(`Lỗi: ${result.error}`);
+        }
+        
+    } catch (error) {
+        alert(`Lỗi kết nối: ${error.message}`);
+    }
+}
+
+// Event listeners
+document.addEventListener('DOMContentLoaded', function() {
+    // Delete button event listeners
+    document.addEventListener('click', function(e) {
+        if (e.target.classList.contains('delete-btn')) {
+            e.preventDefault();
+            deletePage(e.target);
+        }
+    });
+    
+    // Thêm hiệu ứng cho nút xóa
+    const deleteButtons = document.querySelectorAll('.btn-danger');
+    deleteButtons.forEach(btn => {
+        btn.addEventListener('mouseenter', function() {
+            this.style.transform = 'scale(1.05)';
+            this.style.transition = 'transform 0.2s';
+        });
+        btn.addEventListener('mouseleave', function() {
+            this.style.transform = 'scale(1)';
+        });
+    });
+    
+    // Initialize selected count
+    updateSelectedCount();
+    
+
+});
+</script>
+
+{% endblock %}

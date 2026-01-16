@@ -1,0 +1,181 @@
+{% extends "base.html" %}
+
+{% block title %}Chỉnh sửa: {{ title }} - WikiNongSan{% endblock %}
+
+{% block content %}
+<div class="admin-header">
+    <h1>Chỉnh sửa: {{ title }}</h1>
+    <div class="admin-actions">
+        <a href="/page/{{ slug }}" class="btn btn-secondary">Xem trang</a>
+        <a href="/admin/dashboard" class="btn btn-secondary">← Dashboard</a>
+    </div>
+</div>
+
+<div class="admin-content">
+    <form action="/admin/edit/{{ slug }}" method="post" class="page-form">
+        <div class="form-group">
+            <label for="content">Nội dung (Markdown):</label>
+            <textarea id="content" name="content" required class="form-textarea" rows="25">{{ content }}</textarea>
+        </div>
+        
+        <div class="form-actions">
+            <button type="submit" class="btn btn-primary">Lưu thay đổi</button>
+            <a href="/page/{{ slug }}" class="btn btn-secondary">Hủy</a>
+        </div>
+    </form>
+    
+    <div class="edit-info">
+        <h3>Thông tin trang</h3>
+        <ul>
+            <li><strong>Slug:</strong> {{ slug }}</li>
+            <li><strong>URL:</strong> <a href="/page/{{ slug }}" target="_blank">/page/{{ slug }}</a></li>
+            <li><strong>File:</strong> pages/{{ slug }}.md</li>
+        </ul>
+        
+        <h4>Lưu ý:</h4>
+        <ul>
+            <li>Sử dụng cú pháp Markdown để định dạng</li>
+            <li>Thay đổi sẽ có hiệu lực ngay lập tức</li>
+            <li>Hãy kiểm tra kỹ trước khi lưu</li>
+        </ul>
+        
+        <h3>🖼️ Quản lý ảnh bài viết</h3>
+        <p>Upload ảnh riêng cho bài viết này (hiển thị trong sidebar)</p>
+        <form id="imageUploadForm" enctype="multipart/form-data" class="image-upload-form">
+            <div class="form-group">
+                <label for="imageFile">Chọn ảnh:</label>
+                <input type="file" id="imageFile" accept="image/*" class="form-input">
+            </div>
+            <button type="submit" class="btn btn-primary">📤 Upload ảnh bài viết</button>
+        </form>
+        <div id="uploadResult" class="upload-result"></div>
+        
+        <div class="current-image">
+            <h4>Ảnh hiện tại:</h4>
+            <div class="image-preview">
+                <img id="currentSidebarImg" src="/static/uploads/{{ slug }}.jpg" alt="Ảnh bài viết hiện tại" 
+                     style="max-width: 200px; max-height: 200px; width: auto; height: auto; object-fit: cover; border-radius: 8px; margin-top: 0.5rem;"
+                     onerror="this.style.display='none'; document.getElementById('noCurrentImage').style.display='block';">
+                <p id="noCurrentImage" style="display: none; color: #666; font-style: italic;">Chưa có ảnh cho bài viết này</p>
+            </div>
+            <div class="image-actions" style="margin-top: 1rem;">
+                <button id="deleteImageBtn" class="btn btn-danger btn-small" onclick="deleteImage()">
+                    🗑️ Xóa ảnh
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// Auto-save draft mỗi 30 giây
+let autoSaveTimer;
+const textarea = document.getElementById('content');
+
+textarea.addEventListener('input', function() {
+    clearTimeout(autoSaveTimer);
+    autoSaveTimer = setTimeout(function() {
+        localStorage.setItem('draft_{{ slug }}', textarea.value);
+
+    }, 30000);
+});
+
+// Khôi phục draft khi load trang
+window.addEventListener('load', function() {
+    const draft = localStorage.getItem('draft_{{ slug }}');
+    if (draft && confirm('Có bản nháp được lưu. Bạn có muốn khôi phục?')) {
+        textarea.value = draft;
+    }
+});
+
+// Xóa draft khi submit
+document.querySelector('.page-form').addEventListener('submit', function() {
+    localStorage.removeItem('draft_{{ slug }}');
+});
+
+// Image upload form handler
+document.addEventListener('DOMContentLoaded', function() {
+    const imageForm = document.getElementById('imageUploadForm');
+    if (imageForm) {
+        imageForm.addEventListener('submit', async function(e) {
+    e.preventDefault();
+    
+    const fileInput = document.getElementById('imageFile');
+    const resultDiv = document.getElementById('uploadResult');
+    
+    if (!fileInput.files[0]) {
+        resultDiv.innerHTML = '<p style="color: #dc3545;">Vui lòng chọn file ảnh!</p>';
+        return;
+    }
+    
+    const formData = new FormData();
+    formData.append('file', fileInput.files[0]);
+    formData.append('slug', '{{ slug }}');
+    
+    resultDiv.innerHTML = '<p style="color: #007bff;">⏳ Đang upload...</p>';
+    
+    try {
+        const response = await fetch('/admin/api/upload-image', {
+            method: 'POST',
+            body: formData
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            resultDiv.innerHTML = `<p style="color: #28a745;">✅ ${result.message}</p>`;
+            fileInput.value = ''; // Clear file input
+            
+            // Cập nhật ảnh preview
+            const currentImg = document.getElementById('currentSidebarImg');
+            const noImageText = document.getElementById('noCurrentImage');
+            currentImg.src = result.image_url + '?t=' + new Date().getTime(); // Cache bust
+            currentImg.style.display = 'block';
+            noImageText.style.display = 'none';
+        } else {
+            resultDiv.innerHTML = `<p style="color: #dc3545;">❌ ${result.error}</p>`;
+        }
+        
+    } catch (error) {
+        resultDiv.innerHTML = `<p style="color: #dc3545;">❌ Lỗi upload: ${error.message}</p>`;
+    }
+        });
+    }
+});
+
+// Delete image function
+async function deleteImage() {
+    if (!confirm('Bạn có chắc muốn xóa ảnh bài viết này?')) {
+        return;
+    }
+    
+    const formData = new FormData();
+    formData.append('slug', '{{ slug }}');
+    
+    try {
+        const response = await fetch('/admin/api/delete-image', {
+            method: 'POST',
+            body: formData
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            // Ẩn ảnh và hiện text "chưa có ảnh"
+            const currentImg = document.getElementById('currentSidebarImg');
+            const noImageText = document.getElementById('noCurrentImage');
+            const uploadResult = document.getElementById('uploadResult');
+            
+            currentImg.style.display = 'none';
+            noImageText.style.display = 'block';
+            uploadResult.innerHTML = `<p style="color: #28a745;">✅ ${result.message}</p>`;
+        } else {
+            document.getElementById('uploadResult').innerHTML = `<p style="color: #ffc107;">⚠️ ${result.message}</p>`;
+        }
+        
+    } catch (error) {
+        document.getElementById('uploadResult').innerHTML = `<p style="color: #dc3545;">❌ Lỗi xóa ảnh: ${error.message}</p>`;
+    }
+}
+</script>
+{% endblock %}
