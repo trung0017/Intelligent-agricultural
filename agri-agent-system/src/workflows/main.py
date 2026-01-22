@@ -18,7 +18,11 @@ from typing import Any, Dict, List, Optional, TypedDict
 from urllib.parse import urlparse
 import os
 
-from duckduckgo_search import DDGS
+try:
+    from ddgs import DDGS  # Package mới (ddgs)
+except ImportError:
+    # Fallback cho package cũ (duckduckgo-search)
+    from duckduckgo_search import DDGS
 
 from src.agents.extractor import extract_claims_from_url
 from src.agents.resolver import ResolvedClaim, group_and_resolve_claims

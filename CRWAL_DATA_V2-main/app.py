@@ -3,6 +3,10 @@ from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 import os
+from dotenv import load_dotenv
+
+# Load biến môi trường từ file .env
+load_dotenv()
 import markdown
 from pathlib import Path
 import json
@@ -633,6 +637,22 @@ BÀI VIẾT WIKI HOÀN CHỈNH:
                     with open(wiki_file, 'w', encoding='utf-8') as f:
                         f.write(wiki_content)
                     
+                    # Tự động validate bài viết mới bằng Agri-Agent (nếu có)
+                    try:
+                        from validator import validate_wiki_article, AGRI_AGENT_AVAILABLE
+                        if AGRI_AGENT_AVAILABLE:
+                            validation_result = validate_wiki_article(str(wiki_file))
+                            if validation_result["success"]:
+                                results[-1]["validation"] = {
+                                    "validated": True,
+                                    "score": validation_result["validation_score"],
+                                    "claims_count": len(validation_result["claims"]),
+                                    "warnings": len(validation_result["warnings"])
+                                }
+                    except Exception:
+                        # Bỏ qua lỗi validation, không ảnh hưởng đến quá trình tạo wiki
+                        pass
+                    
                     # Tạo URL slug sạch (không có timestamp)
                     clean_slug = topic.lower()
                     clean_slug = ''.join(c for c in clean_slug if c.isalnum() or c in (' ', '-', '_'))
@@ -886,6 +906,126 @@ async def search_pages(request: Request, q: str = ""):
         "query": q,
         "results": results
     })
+
+# ===== AGRI-AGENT VALIDATION APIs =====
+
+@app.post("/admin/api/validate-article")
+async def validate_article_api(slug: str = Form(...), use_web: bool = Form(False)):
+    """API validate một bài viết bằng Agri-Agent
+    
+    Args:
+        slug: Tên file bài viết (không có .md)
+        use_web: Có sử dụng web validation không (mặc định False để tránh vượt quota)
+    """
+    try:
+        from validator import validate_wiki_article, get_validation_summary
+        
+        article_path = PAGES_DIR / f"{slug}.md"
+        if not article_path.exists():
+            return JSONResponse(
+                status_code=404,
+                content={"error": f"Không tìm thấy bài viết: {slug}"}
+            )
+        
+        # Tắt web validation mặc định để tránh vượt quota (20 requests/ngày)
+        # Chỉ bật khi user yêu cầu rõ ràng
+        result = validate_wiki_article(str(article_path), use_web_validation=use_web)
+        summary = get_validation_summary(result)
+        
+        return JSONResponse(content={
+            "success": True,
+            "validation_result": result,
+            "summary": summary
+        })
+        
+    except ImportError as e:
+        return JSONResponse(
+            status_code=500,
+            content={
+                "success": False,
+                "error": f"Agri-Agent không khả dụng: {str(e)}",
+                "message": "Kiểm tra GOOGLE_API_KEY và đường dẫn agri-agent-system"
+            }
+        )
+    except Exception as e:
+        error_msg = str(e)
+        # Kiểm tra nếu là lỗi quota
+        if "429" in error_msg or "RESOURCE_EXHAUSTED" in error_msg or "quota" in error_msg.lower():
+            return JSONResponse(
+                status_code=429,
+                content={
+                    "success": False,
+                    "error": "Quota API đã hết (20 requests/ngày cho Free tier)",
+                    "message": "Vui lòng đợi 24 giờ để reset quota, hoặc tắt web validation để tiết kiệm API calls.",
+                    "suggestion": "Thử lại với use_web=false hoặc đợi đến ngày mai."
+                }
+            )
+        return JSONResponse(
+            status_code=500,
+            content={
+                "success": False,
+                "error": f"Lỗi khi validate: {error_msg}"
+            }
+        )
+
+@app.post("/admin/api/validate-all-articles")
+async def validate_all_articles_api():
+    """API validate tất cả bài viết"""
+    try:
+        from validator import validate_all_articles
+        
+        results = validate_all_articles(str(PAGES_DIR))
+        
+        return JSONResponse(content={
+            "success": True,
+            "results": results
+        })
+        
+    except ImportError as e:
+        return JSONResponse(
+            status_code=500,
+            content={
+                "success": False,
+                "error": f"Agri-Agent không khả dụng: {str(e)}"
+            }
+        )
+    except Exception as e:
+        return JSONResponse(
+            status_code=500,
+            content={
+                "success": False,
+                "error": f"Lỗi khi validate: {str(e)}"
+            }
+        )
+
+@app.get("/admin/api/validation-status")
+async def get_validation_status():
+    """Kiểm tra trạng thái Agri-Agent"""
+    try:
+        from validator import AGRI_AGENT_AVAILABLE, IMPORT_ERROR
+        
+        if AGRI_AGENT_AVAILABLE:
+            # Kiểm tra GOOGLE_API_KEY
+            google_key = os.getenv("GOOGLE_API_KEY")
+            return JSONResponse(content={
+                "available": True,
+                "google_api_key_set": bool(google_key),
+                "message": "Agri-Agent sẵn sàng"
+            })
+        else:
+            return JSONResponse(content={
+                "available": False,
+                "error": IMPORT_ERROR if IMPORT_ERROR else "Unknown error",
+                "message": "Agri-Agent chưa được cấu hình đúng"
+            })
+    except Exception as e:
+        return JSONResponse(
+            status_code=500,
+            content={
+                "available": False,
+                "error": str(e)
+            }
+        )
 
 
 

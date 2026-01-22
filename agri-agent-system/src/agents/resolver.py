@@ -34,6 +34,12 @@ class ResolvedClaim:
     support_urls: List[str]
     total_score: float
     cluster_values: List[str]
+    has_contradictions: bool = False
+    contradiction_details: List[Dict] = None
+    
+    def __post_init__(self):
+        if self.contradiction_details is None:
+            self.contradiction_details = []
 
 
 def _extract_year_from_context(context: Optional[str]) -> Optional[int]:
@@ -102,6 +108,31 @@ def _parse_numeric_value(value: str) -> Optional[float]:
 
     # Nếu có nhiều số, coi như khoảng và lấy trung bình
     return sum(floats) / len(floats)
+
+
+def _cluster_text_values_simple(claims: List[AgriClaim]) -> List[List[AgriClaim]]:
+    """
+    Cluster text values đơn giản bằng exact matching (fallback).
+    """
+    if not claims:
+        return []
+    
+    clusters: List[List[AgriClaim]] = []
+    for claim in claims:
+        claim_value = (claim.object or "").strip().lower()
+        matched = False
+        
+        for cluster in clusters:
+            cluster_value = (cluster[0].object or "").strip().lower()
+            if claim_value == cluster_value:
+                cluster.append(claim)
+                matched = True
+                break
+        
+        if not matched:
+            clusters.append([claim])
+    
+    return clusters
 
 
 def _cluster_numeric_values(values: List[Tuple[AgriClaim, float]]) -> List[List[Tuple[AgriClaim, float]]]:
@@ -182,14 +213,26 @@ def resolve_claims_for_group(claims: Iterable[AgriClaim]) -> Optional[ResolvedCl
                 cluster_claims.append(claim)
             clusters_scores.append((score, cluster_claims))
 
-    # 2) Các claim non-numeric: gộp tất cả thành một cụm riêng (nếu có)
+    # 2) Các claim non-numeric: cluster theo semantic similarity
     if non_numeric_items:
-        score = 0.0
-        for claim in non_numeric_items:
-            trust = calculate_trust_score(claim.source_url or "")
-            time_w = _time_weight_for_claim(claim)
-            score += trust * time_w
-        clusters_scores.append((score, non_numeric_items))
+        # Sử dụng semantic clustering từ judge module
+        try:
+            from src.agents.judge import cluster_claims_by_semantic_similarity
+            text_clusters = cluster_claims_by_semantic_similarity(
+                non_numeric_items,
+                similarity_threshold=0.85
+            )
+        except ImportError:
+            # Fallback: cluster đơn giản theo giá trị text
+            text_clusters = _cluster_text_values_simple(non_numeric_items)
+        
+        for cluster in text_clusters:
+            score = 0.0
+            for claim in cluster:
+                trust = calculate_trust_score(claim.source_url or "")
+                time_w = _time_weight_for_claim(claim)
+                score += trust * time_w
+            clusters_scores.append((score, cluster))
 
     if not clusters_scores:
         return None
@@ -228,12 +271,43 @@ def resolve_claims_for_group(claims: Iterable[AgriClaim]) -> Optional[ResolvedCl
     cluster_values = [
         c.object for c in best_cluster_claims if c.object is not None
     ]
+    
+    # Phát hiện contradictions trong cluster
+    has_contradictions = False
+    contradiction_details = []
+    
+    if len(best_cluster_claims) > 1:
+        try:
+            from src.agents.judge import detect_contradictions_in_group
+            
+            contradiction_info = detect_contradictions_in_group(
+                best_cluster_claims,
+                use_embedding=True,
+                use_cache=True
+            )
+            
+            has_contradictions = contradiction_info["has_contradictions"]
+            contradiction_details = contradiction_info["contradiction_details"]
+        except ImportError:
+            # Fallback: kiểm tra đơn giản
+            unique_values = set(
+                (c.object or "").strip().lower() 
+                for c in best_cluster_claims 
+                if c.object
+            )
+            if len(unique_values) > 1:
+                has_contradictions = True
+                contradiction_details = [{
+                    "reasoning": f"Phát hiện {len(unique_values)} giá trị khác nhau: {', '.join(list(unique_values)[:3])}"
+                }]
 
     return ResolvedClaim(
         gold_claim=gold_claim,
         support_urls=support_urls,
         total_score=best_score,
         cluster_values=cluster_values,
+        has_contradictions=has_contradictions,
+        contradiction_details=contradiction_details,
     )
 
 

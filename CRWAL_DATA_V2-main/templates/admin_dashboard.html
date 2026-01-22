@@ -46,15 +46,32 @@
                         <th><input type="checkbox" id="selectAll" onchange="toggleSelectAll()"></th>
                         <th>Tiêu đề</th>
                         <th>Slug</th>
+                        <th>Validation</th>
                         <th>Thao tác</th>
                     </tr>
                 </thead>
                 <tbody>
                     {% for page in pages %}
-                    <tr>
+                    <tr id="row-{{ page.slug }}">
                         <td><input type="checkbox" class="page-checkbox" value="{{ page.slug }}" onchange="updateSelectedCount()"></td>
                         <td><a href="/page/{{ page.slug }}">{{ page.title }}</a></td>
                         <td><code>{{ page.slug }}</code></td>
+                        <td class="validation-cell">
+                            <span class="validation-status" id="status-{{ page.slug }}">-</span>
+                            <div style="display: flex; align-items: center; gap: 5px;">
+                                <button onclick="validateArticle('{{ page.slug }}', false)" 
+                                        class="btn btn-small btn-info" 
+                                        title="Kiểm tra bằng Agri-Agent (không dùng web)">
+                                    🔍 Validate
+                                </button>
+                                <button onclick="validateArticle('{{ page.slug }}', true)" 
+                                        class="btn btn-small" 
+                                        style="background-color: #ffc107; color: #000; border-color: #ffc107;"
+                                        title="Kiểm tra với web validation (tốn nhiều API calls)">
+                                    🌐 Validate + Web
+                                </button>
+                            </div>
+                        </td>
                         <td class="actions">
                             <a href="/page/{{ page.slug }}" class="btn btn-small">Xem</a>
                             <a href="/admin/edit/{{ page.slug }}" class="btn btn-small btn-primary">Sửa</a>
@@ -88,7 +105,12 @@
                 <p>Làm sạch văn bản bằng AI, tích hợp trong Crawler</p>
                 <a href="/admin/crawler" class="btn btn-small btn-primary">Mở AI Tools</a>
             </div>
-
+            <div class="tool-card">
+                <h4>✅ Agri-Agent Validator</h4>
+                <p>Kiểm tra và validate bài viết bằng Multi-Agent System</p>
+                <button onclick="validateAllArticles()" class="btn btn-small btn-primary">Validate Tất Cả</button>
+                <button onclick="checkValidationStatus()" class="btn btn-small btn-secondary">Kiểm Tra Trạng Thái</button>
+            </div>
 
         </div>
     </div>
@@ -326,8 +348,321 @@ document.addEventListener('DOMContentLoaded', function() {
     // Initialize selected count
     updateSelectedCount();
     
-
+    // Kiểm tra trạng thái validation khi load trang
+    checkValidationStatus();
 });
 </script>
+
+<script>
+// ===== AGRI-AGENT VALIDATION FUNCTIONS =====
+
+async function validateArticle(slug, useWeb = false) {
+    const statusEl = document.getElementById(`status-${slug}`);
+    if (!statusEl) return;
+    
+    // Cảnh báo nếu dùng web validation
+    if (useWeb) {
+        const confirmed = confirm(
+            '⚠️ Cảnh báo: Web validation sẽ tốn nhiều API calls (10-15 requests).\n\n' +
+            'Free tier chỉ có 20 requests/ngày.\n\n' +
+            'Bạn có chắc muốn tiếp tục?'
+        );
+        if (!confirmed) {
+            return;
+        }
+    }
+    
+    // Hiển thị loading
+    const loadingText = useWeb ? '⏳ Đang kiểm tra với web (có thể mất 30-60 giây)...' : '⏳ Đang kiểm tra...';
+    statusEl.innerHTML = `<span style="color: #ffa500;">${loadingText}</span>`;
+    
+    try {
+        const formData = new FormData();
+        formData.append('slug', slug);
+        formData.append('use_web', useWeb ? 'true' : 'false');
+        
+        const response = await fetch('/admin/api/validate-article', {
+            method: 'POST',
+            body: formData
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            const validation = result.validation_result;
+            const score = (validation.validation_score * 100).toFixed(0);
+            
+            // Kiểm tra có contradictions không
+            const hasContradictions = validation.resolved_claims?.some(
+                rc => rc.has_contradictions
+            ) || false;
+            
+            // Hiển thị kết quả
+            let statusHtml = '';
+            if (hasContradictions) {
+                statusHtml = `<span style="color: #dc3545;" title="Có mâu thuẫn">⚠️ ${score}% ⚠️</span>`;
+            } else if (score >= 70) {
+                statusHtml = `<span style="color: #28a745;">✅ ${score}%</span>`;
+            } else if (score >= 50) {
+                statusHtml = `<span style="color: #ffc107;">⚠️ ${score}%</span>`;
+            } else {
+                statusHtml = `<span style="color: #dc3545;">❌ ${score}%</span>`;
+            }
+            
+            statusEl.innerHTML = statusHtml;
+            
+            // Hiển thị modal với chi tiết
+            showValidationDetails(slug, validation, result.summary);
+        } else {
+            statusEl.innerHTML = '<span style="color: #dc3545;">❌ Lỗi</span>';
+            
+            // Xử lý lỗi quota riêng
+            if (response.status === 429) {
+                alert(
+                    '❌ Quota API đã hết!\n\n' +
+                    'Free tier chỉ có 20 requests/ngày.\n\n' +
+                    'Giải pháp:\n' +
+                    '1. Đợi 24 giờ để reset quota\n' +
+                    '2. Hoặc dùng "Validate" (không web) để tiết kiệm\n' +
+                    '3. Hoặc nâng cấp lên Paid tier'
+                );
+            } else {
+                alert(`Lỗi validation: ${result.error || result.message}`);
+            }
+        }
+    } catch (error) {
+        statusEl.innerHTML = '<span style="color: #dc3545;">❌ Lỗi</span>';
+        alert(`Lỗi kết nối: ${error.message}`);
+    }
+}
+
+async function validateAllArticles() {
+    if (!confirm('Bạn có chắc muốn validate tất cả bài viết? Quá trình này có thể mất vài phút.')) {
+        return;
+    }
+    
+    const loadingMsg = document.createElement('div');
+    loadingMsg.style.cssText = 'position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; padding: 20px; border: 2px solid #007bff; border-radius: 8px; z-index: 10000;';
+    loadingMsg.innerHTML = '<p>⏳ Đang validate tất cả bài viết...</p><p>Vui lòng đợi...</p>';
+    document.body.appendChild(loadingMsg);
+    
+    try {
+        const response = await fetch('/admin/api/validate-all-articles', {
+            method: 'POST'
+        });
+        
+        const result = await response.json();
+        document.body.removeChild(loadingMsg);
+        
+        if (result.success) {
+            const summary = result.results.summary;
+            const message = `
+✅ Hoàn thành validation!
+
+📊 Thống kê:
+- Tổng bài viết: ${result.results.total_articles}
+- Tổng claims: ${summary.total_claims}
+- Claims đã validate: ${summary.total_resolved_claims}
+- Điểm trung bình: ${(summary.avg_validation_score * 100).toFixed(0)}%
+- Bài có cảnh báo: ${summary.articles_with_warnings}
+- Bài có lỗi: ${summary.articles_with_errors}
+            `;
+            alert(message);
+            
+            // Reload trang để cập nhật status
+            location.reload();
+        } else {
+            alert(`Lỗi: ${result.error}`);
+        }
+    } catch (error) {
+        document.body.removeChild(loadingMsg);
+        alert(`Lỗi kết nối: ${error.message}`);
+    }
+}
+
+async function checkValidationStatus() {
+    try {
+        const response = await fetch('/admin/api/validation-status');
+        const result = await response.json();
+        
+        if (result.available) {
+            const message = result.google_api_key_set 
+                ? '✅ Agri-Agent sẵn sàng!\n\nGOOGLE_API_KEY đã được thiết lập.'
+                : '⚠️ Agri-Agent sẵn sàng nhưng GOOGLE_API_KEY chưa được thiết lập.';
+            alert(message);
+        } else {
+            alert(`❌ Agri-Agent không khả dụng:\n${result.error || result.message}\n\n💡 Kiểm tra:\n1. GOOGLE_API_KEY đã được thiết lập?\n2. Đường dẫn agri-agent-system đúng chưa?`);
+        }
+    } catch (error) {
+        alert(`Lỗi kiểm tra: ${error.message}`);
+    }
+}
+
+function showValidationDetails(slug, validation, summary) {
+    // Tạo modal để hiển thị chi tiết
+    const modal = document.createElement('div');
+    modal.style.cssText = 'position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 10000; display: flex; align-items: center; justify-content: center;';
+    
+    const content = document.createElement('div');
+    content.style.cssText = 'background: white; padding: 30px; border-radius: 8px; max-width: 600px; max-height: 80vh; overflow-y: auto;';
+    
+    let html = `
+        <h2>📊 Kết quả Validation</h2>
+        <div style="margin: 20px 0;">
+            <pre style="background: #f5f5f5; padding: 15px; border-radius: 4px; white-space: pre-wrap;">${summary}</pre>
+        </div>
+        <div style="margin: 20px 0;">
+            <h3>📋 Claims đã trích xuất: ${validation.claims.length}</h3>
+            <ul style="max-height: 200px; overflow-y: auto;">
+    `;
+    
+    validation.claims.slice(0, 10).forEach((claim, idx) => {
+        html += `<li style="margin: 5px 0;">
+            <strong>${claim.subject}</strong> - ${claim.predicate}: ${claim.object || 'N/A'}
+            <span style="color: #666;">(Confidence: ${(claim.confidence * 100).toFixed(0)}%)</span>
+        </li>`;
+    });
+    
+    if (validation.claims.length > 10) {
+        html += `<li>... và ${validation.claims.length - 10} claims khác</li>`;
+    }
+    
+    html += `
+            </ul>
+        </div>
+    `;
+    
+    // Hiển thị thông tin web validation nếu có
+    if (validation.web_validation && validation.web_validation.enabled) {
+        html += `
+        <div style="margin: 20px 0; padding: 15px; background: #e7f3ff; border-left: 4px solid #2196F3; border-radius: 4px;">
+            <h3>🌐 Web Validation</h3>
+            <p><strong>Số claims từ web:</strong> ${validation.web_validation.web_claims_count}</p>
+            <p><strong>Số lần so sánh:</strong> ${validation.web_validation.validation_results.length}</p>
+            ${validation.web_validation.validation_results.length > 0 ? `
+            <details style="margin-top: 10px;">
+                <summary style="cursor: pointer; color: #2196F3;">Xem chi tiết so sánh với web</summary>
+                <ul style="margin-top: 10px;">
+            ` : ''}
+            ${validation.web_validation.validation_results.slice(0, 5).map(result => `
+                <li style="margin: 10px 0; padding: 10px; background: white; border-radius: 4px;">
+                    <strong>Bài viết:</strong> ${result.article_claim.object || 'N/A'}<br>
+                    <strong>Web:</strong> ${result.web_claim.object || 'N/A'}<br>
+                    <strong>Kết quả:</strong> 
+                    <span style="color: ${result.relation === 'CONTRADICTED' ? '#dc3545' : result.relation === 'SUPPORTED' ? '#28a745' : '#666'};">
+                        ${result.relation === 'CONTRADICTED' ? '⚠️ MÂU THUẪN' : result.relation === 'SUPPORTED' ? '✅ KHỚP' : '⚪ KHÔNG LIÊN QUAN'}
+                    </span><br>
+                    ${result.reasoning ? `<small style="color: #666;">${result.reasoning}</small>` : ''}
+                </li>
+            `).join('')}
+            ${validation.web_validation.validation_results.length > 0 ? `
+                </ul>
+            </details>
+            ` : ''}
+        </div>
+        `;
+    }
+    
+    // Hiển thị resolved claims với contradictions
+    if (validation.resolved_claims && validation.resolved_claims.length > 0) {
+        html += `
+        <div style="margin: 20px 0;">
+            <h3>✨ Claims đã validate: ${validation.resolved_claims.length}</h3>
+            <ul style="max-height: 200px; overflow-y: auto;">
+        `;
+        
+        validation.resolved_claims.slice(0, 10).forEach((rc, idx) => {
+            const hasContradiction = rc.has_contradictions || false;
+            const contradictionIcon = hasContradiction ? '⚠️' : '✅';
+            const contradictionStyle = hasContradiction ? 'color: #dc3545; font-weight: bold;' : '';
+            
+            html += `<li style="margin: 5px 0; ${contradictionStyle}">
+                ${contradictionIcon} <strong>${rc.subject}</strong> - ${rc.predicate}: ${rc.object || 'N/A'}
+                <span style="color: #666;">(Score: ${rc.total_score.toFixed(2)})</span>
+            </li>`;
+            
+            // Hiển thị chi tiết contradictions
+            if (hasContradiction && rc.contradiction_details && rc.contradiction_details.length > 0) {
+                html += `<li style="margin-left: 20px; color: #dc3545; font-size: 0.9em;">
+                    <strong>Mâu thuẫn:</strong><br>`;
+                rc.contradiction_details.slice(0, 2).forEach(detail => {
+                    html += `&nbsp;&nbsp;• ${detail.claim1 || 'N/A'}<br>`;
+                    html += `&nbsp;&nbsp;&nbsp;&nbsp;vs ${detail.claim2 || 'N/A'}<br>`;
+                    html += `&nbsp;&nbsp;&nbsp;&nbsp;<em>${detail.reasoning || ''}</em><br>`;
+                });
+                html += `</li>`;
+            }
+        });
+        
+        if (validation.resolved_claims.length > 10) {
+            html += `<li>... và ${validation.resolved_claims.length - 10} claims khác</li>`;
+        }
+        
+        html += `
+            </ul>
+        </div>
+        `;
+    }
+    
+    html += `
+        <button onclick="this.closest('div[style*=\"position: fixed\"]').remove()" 
+                style="padding: 10px 20px; background: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer;">
+            Đóng
+        </button>
+    `;
+    
+    content.innerHTML = html;
+    modal.appendChild(content);
+    document.body.appendChild(modal);
+    
+    // Đóng khi click bên ngoài
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) {
+            document.body.removeChild(modal);
+        }
+    });
+}
+</script>
+
+<style>
+.validation-cell {
+    min-width: 150px;
+}
+
+.validation-status {
+    display: inline-block;
+    margin-right: 10px;
+    font-weight: bold;
+}
+
+.btn-info {
+    background: #17a2b8;
+    color: white;
+    border: none;
+    padding: 5px 10px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 12px;
+}
+
+.btn-info:hover {
+    background: #138496;
+}
+
+.btn-secondary {
+    background: #6c757d;
+    color: white;
+    border: none;
+    padding: 5px 10px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 12px;
+    margin-left: 5px;
+}
+
+.btn-secondary:hover {
+    background: #5a6268;
+}
+</style>
 
 {% endblock %}
