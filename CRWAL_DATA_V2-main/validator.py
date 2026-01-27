@@ -200,9 +200,16 @@ def validate_wiki_article(article_path: str, use_web_validation: bool = True) ->
             
             if main_subject:
                 # Tìm kiếm web về subject này
+                # ⚠️ CẢNH BÁO: Web validation tạo ra RẤT NHIỀU API calls (25-75+)
+                # Chỉ bật khi thực sự cần thiết và đã kiểm tra rate limit
                 try:
+                    # Log để theo dõi
+                    print(f"⚠️ Web validation đang chạy cho '{main_subject}' - Có thể tạo ra 25-75+ API calls")
+                    
                     workflow_state = run_agri_workflow(crop=main_subject)
                     web_claims = workflow_state.get("claims", [])
+                    
+                    print(f"✅ Web validation hoàn tất - Tìm được {len(web_claims)} claims từ web")
                     
                     # Chỉ validate các claims quan trọng với web (tác giả, giải thưởng, nguồn gốc)
                     important_predicates = [

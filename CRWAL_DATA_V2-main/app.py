@@ -927,8 +927,9 @@ async def validate_article_api(slug: str = Form(...), use_web: bool = Form(False
                 content={"error": f"Không tìm thấy bài viết: {slug}"}
             )
         
-        # Tắt web validation mặc định để tránh vượt quota (20 requests/ngày)
-        # Chỉ bật khi user yêu cầu rõ ràng
+        # Tắt web validation mặc định để tránh vượt quota
+        # Web validation tạo ra 15-45+ API calls, chỉ bật khi thực sự cần thiết
+        # Mặc định: TẮT (use_web=False) để tránh vượt rate limit
         result = validate_wiki_article(str(article_path), use_web_validation=use_web)
         summary = get_validation_summary(result)
         

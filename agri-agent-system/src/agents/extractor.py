@@ -23,6 +23,18 @@ from langchain_core.messages import SystemMessage, HumanMessage
 from src.models import AgriClaim
 from src.tools.scraper import scrape_clean_text
 
+# Import rate limiter và circuit breaker
+try:
+    from src.utils.rate_limiter import get_rate_limiter, get_circuit_breaker
+    RATE_LIMITER_AVAILABLE = True
+except ImportError:
+    RATE_LIMITER_AVAILABLE = False
+    # Fallback: tạo dummy functions
+    def get_rate_limiter():
+        return None
+    def get_circuit_breaker():
+        return None
+
 
 EXTRACTION_SYSTEM_PROMPT = (
     "Bạn là Chuyên gia Dữ liệu Nông nghiệp Việt Nam chuyên trích xuất thông tin chi tiết.\n"
@@ -67,12 +79,13 @@ def _get_gemini_client() -> ChatGoogleGenerativeAI:
     # Lưu ý:
     # - Model "gemini-1.5-flash" đã bị deprecated và không còn tồn tại (404 NOT_FOUND).
     # - Các model hiện có:
-    #   * gemini-2.5-flash: Model mới nhất, nhanh và hiệu quả
-    #   * gemini-flash-latest: Alias luôn trỏ tới model flash mới nhất
-    #   * gemini-2.5-flash-lite: Phiên bản nhẹ hơn
-    # - Sử dụng "gemini-flash-latest" để luôn dùng model mới nhất, hoặc "gemini-2.5-flash" cho version cụ thể
+    #   * gemini-2.5-flash: Model mới nhất, nhanh và hiệu quả (ĐÃ VƯỢT LIMIT: 23/20 RPD)
+    #   * gemini-flash-latest: Alias luôn trỏ tới model flash mới nhất (ĐÃ VƯỢT LIMIT)
+    #   * gemini-2.5-flash-lite: Phiên bản nhẹ hơn (CÒN TRỐNG: 0/10 RPM, 0/20 RPD)
+    #   * gemini-3-flash: Model mới (CÒN TRỐNG: 0/5 RPM, 0/20 RPD)
+    # - Đổi sang gemini-2.5-flash-lite để tránh vượt rate limit của gemini-2.5-flash
     return ChatGoogleGenerativeAI(
-        model="gemini-flash-latest",  # Luôn dùng model flash mới nhất
+        model="gemini-2.5-flash",  # Đổi sang flash-lite để tránh rate limit
         api_key=api_key,
         temperature=0.3,  # Tăng từ 0.2 lên 0.3 để model sáng tạo hơn trong việc tìm claims
     )
@@ -149,44 +162,89 @@ def extract_claims_from_text(text: str, use_chunking: bool = True, chunk_size: i
         all_claims = []
         
         for chunk in chunks:
+            # Kiểm tra Circuit Breaker trước khi gọi API
+            if RATE_LIMITER_AVAILABLE:
+                circuit_breaker = get_circuit_breaker()
+                if circuit_breaker and not circuit_breaker.can_make_request():
+                    print(f"🚨 Circuit Breaker OPEN: Bỏ qua chunk do quá nhiều lỗi 429")
+                    continue
+                
+                # Rate limiting
+                rate_limiter = get_rate_limiter()
+                if rate_limiter:
+                    rate_limiter.wait_if_needed()
+            
             messages = [
                 SystemMessage(content=EXTRACTION_SYSTEM_PROMPT),
                 HumanMessage(content=f"Input Text:\n{chunk}"),
             ]
             
-            # Retry logic cho lỗi quota (429)
-            max_retries = 2
+            # Retry logic cho lỗi quota (429) - GIẢM số lần retry
+            max_retries = 1  # Giảm từ 2 xuống 1 để tránh tạo quá nhiều requests
             raw_content = None
             for attempt in range(max_retries + 1):
                 try:
+                    # Ghi nhận request (cho circuit breaker)
+                    if RATE_LIMITER_AVAILABLE:
+                        circuit_breaker = get_circuit_breaker()
+                        if circuit_breaker:
+                            circuit_breaker.record_request()
+                    
                     response = client.invoke(messages)
                     raw_content = response.content if isinstance(response.content, str) else (
                         "".join(part["text"] for part in response.content if isinstance(part, dict) and "text" in part)
                         if isinstance(response.content, Iterable)
                         else str(response.content)
                     )
+                    
+                    # Ghi nhận success
+                    if RATE_LIMITER_AVAILABLE:
+                        circuit_breaker = get_circuit_breaker()
+                        if circuit_breaker:
+                            circuit_breaker.record_success()
+                    
                     break  # Thành công, thoát khỏi retry loop
                 except Exception as e:
                     error_str = str(e)
+                    is_429 = "429" in error_str or "RESOURCE_EXHAUSTED" in error_str or "quota" in error_str.lower()
+                    
+                    # Ghi nhận failure
+                    if RATE_LIMITER_AVAILABLE:
+                        circuit_breaker = get_circuit_breaker()
+                        if circuit_breaker:
+                            circuit_breaker.record_failure(is_429=is_429)
+                    
                     # Kiểm tra nếu là lỗi quota (429)
-                    if ("429" in error_str or "RESOURCE_EXHAUSTED" in error_str or 
-                        "quota" in error_str.lower()) and attempt < max_retries:
-                        # Cố gắng đọc retryDelay từ error message
-                        wait_time = 15 * (attempt + 1)  # Mặc định: 15s, 30s
+                    if is_429 and attempt < max_retries:
+                        # Nếu circuit breaker đã mở, không retry nữa
+                        if RATE_LIMITER_AVAILABLE:
+                            circuit_breaker = get_circuit_breaker()
+                            if circuit_breaker and circuit_breaker.get_state().name == "OPEN":
+                                print(f"🚨 Circuit Breaker OPEN: Dừng retry do quá nhiều lỗi 429")
+                                raw_content = None
+                                break
+                        
+                        # Exponential backoff với jitter
+                        import random
+                        base_delay = 60  # Tăng lên 60 giây
+                        delay = (2 ** attempt) * base_delay  # 60s, 120s
+                        jitter = random.uniform(0, 20)  # Tăng jitter lên 0-20s
+                        wait_time = delay + jitter
+                        
                         try:
                             # Tìm "retry in Xs" hoặc "retryDelay" trong error
                             import re
                             retry_match = re.search(r'retry in ([\d.]+)s', error_str, re.IGNORECASE)
                             if retry_match:
-                                wait_time = float(retry_match.group(1)) + 2  # Thêm 2s buffer
+                                wait_time = max(wait_time, float(retry_match.group(1)) + 10)  # Thêm buffer lớn hơn
                             else:
-                                # Tìm trong details nếu có
                                 retry_delay_match = re.search(r"'retryDelay':\s*'(\d+)s'", error_str)
                                 if retry_delay_match:
-                                    wait_time = float(retry_delay_match.group(1)) + 2
+                                    wait_time = max(wait_time, float(retry_delay_match.group(1)) + 10)
                         except:
-                            pass  # Dùng wait_time mặc định nếu không parse được
+                            pass
                         
+                        print(f"⚠️ Rate limit hit (429), waiting {wait_time:.1f}s before retry {attempt + 1}/{max_retries}")
                         time.sleep(wait_time)
                         continue
                     # Nếu không phải lỗi quota hoặc đã retry hết, bỏ qua chunk này
@@ -235,37 +293,78 @@ def extract_claims_from_text(text: str, use_chunking: bool = True, chunk_size: i
             HumanMessage(content=f"Input Text:\n{text}"),
         ]
 
-        # Retry logic cho lỗi quota (429)
-        max_retries = 2
+        # Kiểm tra Circuit Breaker trước khi gọi API
+        if RATE_LIMITER_AVAILABLE:
+            circuit_breaker = get_circuit_breaker()
+            if circuit_breaker and not circuit_breaker.can_make_request():
+                raise RuntimeError("Circuit Breaker OPEN: Quá nhiều lỗi 429, vui lòng thử lại sau")
+            
+            # Rate limiting
+            rate_limiter = get_rate_limiter()
+            if rate_limiter:
+                rate_limiter.wait_if_needed()
+        
+        # Retry logic cho lỗi quota (429) - GIẢM số lần retry
+        max_retries = 1  # Giảm từ 2 xuống 1
         for attempt in range(max_retries + 1):
             try:
+                # Ghi nhận request
+                if RATE_LIMITER_AVAILABLE:
+                    circuit_breaker = get_circuit_breaker()
+                    if circuit_breaker:
+                        circuit_breaker.record_request()
+                
                 response = client.invoke(messages)
                 raw_content = response.content if isinstance(response.content, str) else (
                     "".join(part["text"] for part in response.content if isinstance(part, dict) and "text" in part)
                     if isinstance(response.content, Iterable)
                     else str(response.content)
                 )
+                
+                # Ghi nhận success
+                if RATE_LIMITER_AVAILABLE:
+                    circuit_breaker = get_circuit_breaker()
+                    if circuit_breaker:
+                        circuit_breaker.record_success()
+                
                 break  # Thành công, thoát khỏi retry loop
             except Exception as e:
                 error_str = str(e)
+                is_429 = "429" in error_str or "RESOURCE_EXHAUSTED" in error_str or "quota" in error_str.lower()
+                
+                # Ghi nhận failure
+                if RATE_LIMITER_AVAILABLE:
+                    circuit_breaker = get_circuit_breaker()
+                    if circuit_breaker:
+                        circuit_breaker.record_failure(is_429=is_429)
+                
                 # Kiểm tra nếu là lỗi quota (429)
-                if ("429" in error_str or "RESOURCE_EXHAUSTED" in error_str or 
-                    "quota" in error_str.lower()) and attempt < max_retries:
-                    # Cố gắng đọc retryDelay từ error message
-                    wait_time = 15 * (attempt + 1)  # Mặc định: 15s, 30s
+                if is_429 and attempt < max_retries:
+                    # Nếu circuit breaker đã mở, không retry
+                    if RATE_LIMITER_AVAILABLE:
+                        circuit_breaker = get_circuit_breaker()
+                        if circuit_breaker and circuit_breaker.get_state().name == "OPEN":
+                            raise RuntimeError("Circuit Breaker OPEN: Quá nhiều lỗi 429, vui lòng thử lại sau")
+                    
+                    # Exponential backoff
+                    import random
+                    base_delay = 60
+                    delay = (2 ** attempt) * base_delay
+                    jitter = random.uniform(0, 20)
+                    wait_time = delay + jitter
+                    
                     try:
-                        # Tìm "retry in Xs" hoặc "retryDelay" trong error
                         retry_match = re.search(r'retry in ([\d.]+)s', error_str, re.IGNORECASE)
                         if retry_match:
-                            wait_time = float(retry_match.group(1)) + 2  # Thêm 2s buffer
+                            wait_time = max(wait_time, float(retry_match.group(1)) + 10)
                         else:
-                            # Tìm trong details nếu có
                             retry_delay_match = re.search(r"'retryDelay':\s*'(\d+)s'", error_str)
                             if retry_delay_match:
-                                wait_time = float(retry_delay_match.group(1)) + 2
+                                wait_time = max(wait_time, float(retry_delay_match.group(1)) + 10)
                     except:
-                        pass  # Dùng wait_time mặc định nếu không parse được
+                        pass
                     
+                    print(f"⚠️ Rate limit hit (429), waiting {wait_time:.1f}s before retry {attempt + 1}/{max_retries}")
                     time.sleep(wait_time)
                     continue
                 # Nếu không phải lỗi quota hoặc đã retry hết, raise lỗi

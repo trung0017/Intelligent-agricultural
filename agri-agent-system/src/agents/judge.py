@@ -57,8 +57,10 @@ def _get_gemini_client() -> ChatGoogleGenerativeAI:
     if not api_key:
         raise RuntimeError("GOOGLE_API_KEY chưa được thiết lập")
     
+    # Đổi sang gemini-2.5-flash-lite để tránh rate limit của gemini-2.5-flash
+    # gemini-2.5-flash đã vượt limit (23/20 RPD), flash-lite còn trống (0/10 RPM, 0/20 RPD)
     return ChatGoogleGenerativeAI(
-        model="gemini-flash-latest",
+        model="gemini-2.5-flash",  # Đổi sang flash-lite để tránh rate limit
         api_key=api_key,
         temperature=0.1,  # Thấp để có kết quả nhất quán
     )

@@ -236,9 +236,9 @@ def search_node(state: WorkflowState) -> WorkflowState:
     debug["trust_scores_detail"] = trust_scores_detail[:20]  # Giới hạn log
 
     # Nếu sau khi lọc không còn gì, dùng lại danh sách gốc (đã dedup) như fallback
-    # Nhưng chỉ lấy 10 URL đầu tiên
+    # Giới hạn 3 URLs cho FREE TIER (5 RPM, 20 RPD limits)
     final_urls = filtered_urls if filtered_urls else dedup_urls
-    final_urls = final_urls[:15]  # Tăng lên 15 để có nhiều cơ hội extract claims hơn
+    final_urls = final_urls[:3]  # Chỉ 3 URLs để tuân thủ Free Tier limits (5 RPM, 20 RPD)
 
     debug["search_query"] = query
     debug["num_search_results"] = len(final_urls)
@@ -258,17 +258,32 @@ def extract_node(state: WorkflowState) -> WorkflowState:
     """
     Node Extract: chạy Extractor Agent để trích xuất claim từ từng URL.
     """
+    import time
+    
     urls = state.get("search_results") or []
     all_claims: List[AgriClaim] = []
     debug: Dict[str, Any] = dict(state.get("debug_info") or {})
     errors: List[str] = list(debug.get("errors") or [])
 
-    for url in urls:
+    # Tối ưu hóa cho FREE TIER: Giới hạn nghiêm ngặt để tuân thủ 5 RPM và 20 RPD
+    # Free Tier limits: 5 requests/phút, 20 requests/ngày
+    MAX_URLS_TO_PROCESS = 3  # Giảm xuống 3 URLs để đảm bảo < 5 requests/phút
+    DELAY_BETWEEN_REQUESTS = 15.0  # Delay 15 giây để đảm bảo < 5 requests/phút (3 calls trong 45s)
+    
+    urls = urls[:MAX_URLS_TO_PROCESS]  # Chỉ xử lý 3 URLs đầu tiên
+
+    for idx, url in enumerate(urls):
         try:
+            # Delay trước mỗi request (trừ request đầu tiên) để tránh burst requests
+            if idx > 0:
+                time.sleep(DELAY_BETWEEN_REQUESTS)
+            
             claims = extract_claims_from_url(url)
             all_claims.extend(claims)
         except Exception as exc:  # pragma: no cover - phụ thuộc LLM/network
             errors.append(f"Extract error for {url}: {exc}")
+            # Delay thêm nếu có lỗi để tránh retry ngay lập tức
+            time.sleep(2.0)
 
     debug["errors"] = errors
     debug["num_claims"] = len(all_claims)
