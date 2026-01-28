@@ -3,10 +3,6 @@
 ## 1. TỔNG QUAN DỰ ÁN
 - **Tên đề tài:** Xây dựng hệ thống phân tích dữ liệu thông minh dựa trên các giải thuật máy học (Ứng dụng cho nông nghiệp ĐBSCL).
 - **Mục tiêu:** Xây dựng hệ thống Multi-Agent có khả năng thu thập, trích xuất, kiểm định và giải quyết mâu thuẫn dữ liệu từ Internet để xây dựng cơ sở tri thức (Wiki) nông nghiệp.
-- **Giới hạn nguồn lực:** 
-  - Ngân sách: ~29 triệu VNĐ (Ưu tiên giải pháp miễn phí/giá rẻ).
-  - Hạ tầng: Chạy trên máy cá nhân/Local Server (Không dùng Cloud đắt tiền).
-  - Mô hình AI: Google Gemini 1.5 Flash (Dev/Test) hoặc GPT-4o mini.
 
 ## 2. KIẾN TRÚC KỸ THUẬT (TECH STACK)
 - **Ngôn ngữ:** Python 3.10+.
